@@ -37,7 +37,14 @@ function DocumentsPageContent() {
   }, [getFreshToken]);
 
   useEffect(() => {
-    refresh();
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!cancelled) refresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refresh]);
 
   useEffect(() => {

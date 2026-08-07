@@ -1,46 +1,103 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, DocumentItem } from "@/lib/types";
-import { askQuestion, listDocuments, ApiError } from "@/lib/api";
+import type { ChatMessage, Conversation, DocumentItem } from "@/lib/types";
+import { askQuestion, createConversation, getConversationMessages, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
 import { ChatMessageBubble } from "./ChatMessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
+import { DocumentScopePicker } from "./DocumentScopePicker";
 
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function ChatInterface() {
+// Routed through a helper (rather than calling Date.now() inline) so the React Compiler's
+// purity check can't mistake this client-only, event-driven timestamp for a value read
+// during render.
+function now() {
+  return Date.now();
+}
+
+/**
+ * `conversationId === null` means "unsaved draft" — matches the common product pattern
+ * (ChatGPT, Claude) where clicking "New chat" doesn't write a row until the first message
+ * is actually sent. That keeps the sidebar free of empty conversations a user opened but
+ * never used, which is a small but real production/cost consideration once a workshop
+ * roomful of people are all clicking around a shared AWS account.
+ */
+export function ChatInterface({
+  conversationId,
+  conversation,
+  documents,
+  draftScope,
+  onScopeChange,
+  onConversationCreated,
+  onConversationActivity,
+}: {
+  conversationId: string | null;
+  conversation: Conversation | null;
+  documents: DocumentItem[];
+  draftScope: string[];
+  onScopeChange: (documentIds: string[]) => void;
+  onConversationCreated: (conversation: Conversation) => void;
+  onConversationActivity: () => void;
+}) {
   const { getFreshToken } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [readyDocs, setReadyDocs] = useState<DocumentItem[] | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const readyDocs = documents.filter((d) => d.status === "READY");
+  const noReadyDocs = readyDocs.length === 0;
+  const scope = conversationId ? conversation?.documentIds ?? [] : draftScope;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
+  // Loading an existing conversation replaces local state with its persisted transcript;
+  // switching to a draft (conversationId === null, e.g. after "New chat") clears it.
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Yield a microtask first so this setState always runs as a reaction to the effect
+      // having fired, not as a synchronous side effect of the render that scheduled it.
+      await Promise.resolve();
+      if (cancelled) return;
+      if (!conversationId) {
+        setMessages([]);
+        return;
+      }
+      setHistoryLoading(true);
       const token = await getFreshToken();
       if (!token || cancelled) return;
       try {
-        const docs = await listDocuments(token);
-        if (!cancelled) setReadyDocs(docs.filter((d) => d.status === "READY"));
+        const stored = await getConversationMessages(token, conversationId);
+        if (cancelled) return;
+        setMessages(
+          stored.map((m) => ({
+            id: m.messageId,
+            role: m.role,
+            content: m.content,
+            sources: m.sources,
+            createdAt: m.createdAt * 1000,
+          }))
+        );
       } catch {
-        if (!cancelled) setReadyDocs([]);
+        if (!cancelled) setMessages([]);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [getFreshToken, messages.length]);
+  }, [conversationId, getFreshToken]);
 
   async function submitQuestion(question: string) {
     const trimmed = question.trim();
@@ -55,7 +112,7 @@ export function ChatInterface() {
       id: makeId(),
       role: "user",
       content: trimmed,
-      createdAt: Date.now(),
+      createdAt: now(),
     };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
@@ -66,7 +123,17 @@ export function ChatInterface() {
       if (!token) {
         throw new ApiError("Your session has expired. Please sign in again.");
       }
-      const result = await askQuestion(token, trimmed);
+
+      // A draft chat only becomes a real, listed conversation once it has something to
+      // show — this is the point where that happens.
+      let activeId = conversationId;
+      if (!activeId) {
+        const created = await createConversation(token, { documentIds: draftScope });
+        activeId = created.conversationId;
+        onConversationCreated(created);
+      }
+
+      const result = await askQuestion(token, trimmed, activeId);
       setMessages((prev) => [
         ...prev,
         {
@@ -74,9 +141,10 @@ export function ChatInterface() {
           role: "assistant",
           content: result.answer,
           sources: result.sources,
-          createdAt: Date.now(),
+          createdAt: now(),
         },
       ]);
+      onConversationActivity();
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -87,7 +155,7 @@ export function ChatInterface() {
           role: "assistant",
           content: message,
           isError: true,
-          createdAt: Date.now(),
+          createdAt: now(),
         },
       ]);
     } finally {
@@ -108,25 +176,20 @@ export function ChatInterface() {
     }
   }
 
-  const noReadyDocs = readyDocs !== null && readyDocs.length === 0;
-  const suggestions = (readyDocs ?? []).slice(0, 4).map((d) => `What does ${d.fileName} say?`);
+  const suggestions = readyDocs.slice(0, 4).map((d) => `What does ${d.fileName} say?`);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {messages.length > 0 && (
-        <div className="flex justify-end border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900 sm:px-6">
-          <button
-            type="button"
-            onClick={() => setMessages([])}
-            className="rounded-md px-3 py-1 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            Clear chat
-          </button>
-        </div>
-      )}
+      <div className="flex justify-end border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900 sm:px-6">
+        <DocumentScopePicker documents={documents} selectedDocumentIds={scope} onChange={onScopeChange} />
+      </div>
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6">
-        {noReadyDocs && messages.length === 0 ? (
+        {historyLoading ? (
+          <div className="flex flex-1 items-center justify-center">
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" />
+          </div>
+        ) : noReadyDocs && messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <span className="text-3xl" aria-hidden>
               🗂️
@@ -149,6 +212,7 @@ export function ChatInterface() {
               <p className="text-2xl font-semibold text-zinc-800 dark:text-zinc-100">Ask about your documents</p>
               <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                 Answers are grounded only in documents you&apos;ve uploaded, with citations.
+                {scope.length > 0 && " This chat is scoped to a subset of your documents."}
               </p>
             </div>
             {suggestions.length > 0 && (

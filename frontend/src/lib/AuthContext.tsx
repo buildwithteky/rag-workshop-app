@@ -65,7 +65,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshFromCurrentUser();
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!cancelled) refreshFromCurrentUser();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshFromCurrentUser]);
 
   const signUp = useCallback((emailAddr: string, password: string) => {

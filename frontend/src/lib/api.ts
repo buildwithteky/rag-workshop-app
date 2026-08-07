@@ -1,4 +1,4 @@
-import type { AskResponse, DocumentItem } from "./types";
+import type { AskResponse, Conversation, DocumentItem } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -53,13 +53,72 @@ async function parseJsonOrThrow(res: Response): Promise<unknown> {
   return data;
 }
 
-export async function askQuestion(token: string, question: string): Promise<AskResponse> {
+export async function askQuestion(
+  token: string,
+  question: string,
+  conversationId: string
+): Promise<AskResponse> {
   const res = await authedFetch("/chat", token, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, conversationId }),
   });
   return parseJsonOrThrow(res) as Promise<AskResponse>;
+}
+
+// --- Conversations (chat history + per-chat document scoping) ---
+
+export async function listConversations(token: string): Promise<Conversation[]> {
+  const res = await authedFetch("/conversations", token, { method: "GET" });
+  const data = (await parseJsonOrThrow(res)) as { conversations: Conversation[] };
+  return data.conversations;
+}
+
+export async function createConversation(
+  token: string,
+  opts: { title?: string; documentIds?: string[] } = {}
+): Promise<Conversation> {
+  const res = await authedFetch("/conversations", token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  return parseJsonOrThrow(res) as Promise<Conversation>;
+}
+
+export async function updateConversation(
+  token: string,
+  conversationId: string,
+  updates: { title?: string; documentIds?: string[] }
+): Promise<Conversation> {
+  const res = await authedFetch(`/conversations/${conversationId}`, token, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  return parseJsonOrThrow(res) as Promise<Conversation>;
+}
+
+export async function deleteConversation(token: string, conversationId: string): Promise<void> {
+  const res = await authedFetch(`/conversations/${conversationId}`, token, { method: "DELETE" });
+  await parseJsonOrThrow(res);
+}
+
+export interface StoredMessage {
+  messageId: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: { title: string; excerpt: string }[];
+  createdAt: number;
+}
+
+export async function getConversationMessages(
+  token: string,
+  conversationId: string
+): Promise<StoredMessage[]> {
+  const res = await authedFetch(`/conversations/${conversationId}/messages`, token, { method: "GET" });
+  const data = (await parseJsonOrThrow(res)) as { messages: StoredMessage[] };
+  return data.messages;
 }
 
 export async function listDocuments(token: string): Promise<DocumentItem[]> {

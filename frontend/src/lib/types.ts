@@ -7,6 +7,7 @@ export interface AskResponse {
   answer: string;
   sources: Source[];
   sessionId?: string;
+  conversationId?: string;
 }
 
 export interface ChatMessage {
@@ -16,6 +17,15 @@ export interface ChatMessage {
   sources?: Source[];
   isError?: boolean;
   createdAt: number;
+}
+
+export interface Conversation {
+  conversationId: string;
+  title: string;
+  documentIds: string[];
+  messageCount: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type DocumentStatus = "UPLOADING" | "PROCESSING" | "READY" | "FAILED" | "DELETING";
