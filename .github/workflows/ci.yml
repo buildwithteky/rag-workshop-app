@@ -1,0 +1,88 @@
+name: CI
+
+# Runs on every push and pull request. This is the gate deploy.yml requires before it
+# will touch AWS at all — nothing gets deployed unless every job below is green.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call: {} # lets deploy.yml require this exact same gate before it deploys anything
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: ESLint
+        run: npx eslint src --max-warnings=0
+        working-directory: frontend
+      - name: TypeScript
+        run: npx tsc --noEmit
+        working-directory: frontend
+      - name: Build (static export)
+        run: npm run build
+        working-directory: frontend
+        env:
+          # Placeholder, non-secret values — the build only needs these to exist so
+          # `next build` can statically inline them; the real values are supplied again
+          # at deploy time from repo Variables and baked into the artifact that actually
+          # ships.
+          NEXT_PUBLIC_API_URL: https://ci-placeholder.execute-api.us-east-1.amazonaws.com
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: us-east-1_ciplaceholder
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ciplaceholder
+
+  backend:
+    name: Backend (syntax, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+        working-directory: backend
+      - name: Compile-check every Lambda handler
+        run: python -m py_compile lambda/*.py
+        working-directory: backend
+      - name: Unit tests (moto-mocked AWS, no real account needed)
+        run: python -m pytest tests/ -v
+        working-directory: backend
+
+  security-and-quality:
+    name: Security & quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No hardcoded AWS account IDs / access keys / tracked resource-ids.json
+        run: bash scripts/check-no-hardcoded-ids.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: npm audit (high+ severity only, doesn't fail the build)
+        run: npm audit --audit-level=high || true
+        working-directory: frontend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: pip-audit (backend dependencies)
+        run: |
+          pip install -q pip-audit
+          pip-audit -r requirements-dev.txt || true
+        working-directory: backend

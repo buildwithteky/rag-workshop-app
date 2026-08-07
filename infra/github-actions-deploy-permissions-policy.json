@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DeployLambdaCode",
+      "Effect": "Allow",
+      "Action": ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:GetFunctionConfiguration"],
+      "Resource": [
+        "arn:aws:lambda:us-east-1:<ACCOUNT_ID>:function:rag-workshop-ask",
+        "arn:aws:lambda:us-east-1:<ACCOUNT_ID>:function:rag-workshop-conversations",
+        "arn:aws:lambda:us-east-1:<ACCOUNT_ID>:function:rag-workshop-documents-upload",
+        "arn:aws:lambda:us-east-1:<ACCOUNT_ID>:function:rag-workshop-documents-manage",
+        "arn:aws:lambda:us-east-1:<ACCOUNT_ID>:function:rag-workshop-ingest-sync"
+      ]
+    },
+    {
+      "Sid": "DeployFrontendToS3",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::rag-workshop-frontend-<ACCOUNT_ID>",
+        "arn:aws:s3:::rag-workshop-frontend-<ACCOUNT_ID>/*"
+      ]
+    },
+    {
+      "Sid": "InvalidateCloudFront",
+      "Effect": "Allow",
+      "Action": ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"],
+      "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:distribution/<CLOUDFRONT_DISTRIBUTION_ID>"
+    },
+    {
+      "Sid": "DeployMarkerForRollback",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:PutParameter"],
+      "Resource": "arn:aws:ssm:us-east-1:<ACCOUNT_ID>:parameter/rag-workshop/last-good-sha"
+    }
+  ]
+}

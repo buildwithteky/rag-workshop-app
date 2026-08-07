@@ -1,0 +1,198 @@
+name: Deploy
+
+# Only ever runs against main, and only after the full CI gate (lint, typecheck, build,
+# backend tests, security/quality checks) has passed on this exact commit — see the
+# `ci:` job below, which calls ci.yml as a reusable workflow rather than re-implementing
+# it. This is the commit-to-production path: source -> automated build -> tests ->
+# security/quality checks -> deploy -> health verification -> (rollback if needed).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # allows a manual re-run from the Actions tab, e.g. to retry a flaky health check
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never cancel a deploy mid-flight; queue instead
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  ci:
+    name: CI gate
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to AWS
+    needs: ci
+    runs-on: ubuntu-latest
+    # id-token: write is what lets this job request a short-lived OIDC token from GitHub
+    # and exchange it for temporary AWS credentials via sts:AssumeRoleWithWebIdentity —
+    # no AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY secret exists anywhere in this repo.
+    permissions:
+      id-token: write
+      contents: read
+    environment: production
+    outputs:
+      previous_sha: ${{ steps.read-marker.outputs.previous_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume the deploy role via GitHub OIDC (no long-lived AWS keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read the last known-good commit (for rollback, before we overwrite it)
+        id: read-marker
+        run: |
+          PREVIOUS_SHA=$(aws ssm get-parameter --name /rag-workshop/last-good-sha \
+            --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+          echo "previous_sha=$PREVIOUS_SHA" >> "$GITHUB_OUTPUT"
+          echo "Previous known-good commit: ${PREVIOUS_SHA:-<none yet>}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ vars.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ vars.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
+
+      - name: Deploy backend Lambdas
+        working-directory: backend/lambda
+        run: |
+          set -euo pipefail
+          declare -A FUNCTIONS=(
+            [index]="rag-workshop-ask"
+            [conversations]="rag-workshop-conversations"
+            [documents_upload]="rag-workshop-documents-upload"
+            [documents_manage]="rag-workshop-documents-manage"
+            [ingest_sync]="rag-workshop-ingest-sync"
+          )
+          for src in "${!FUNCTIONS[@]}"; do
+            fn="${FUNCTIONS[$src]}"
+            zip -q "/tmp/${fn}.zip" "${src}.py"
+            aws lambda update-function-code --function-name "$fn" \
+              --zip-file "fileb:///tmp/${fn}.zip" --region "$AWS_REGION" > /dev/null
+            echo "Deployed $src.py -> $fn"
+          done
+
+      - name: Deploy frontend to S3 + invalidate CloudFront
+        run: |
+          set -euo pipefail
+          aws s3 sync frontend/out/ "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*" > /dev/null
+
+  health-check:
+    name: Verify the deploy is actually healthy
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Assume the deploy role via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: API Gateway responds (CORS preflight needs no auth, so this proves the Lambda + route are live)
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" -X OPTIONS "${{ vars.API_URL }}/chat")
+            [ "$status" = "200" ] && { echo "API healthy (attempt $attempt)"; exit 0; }
+            echo "API returned $status on attempt $attempt, retrying in 10s..."
+            sleep 10
+          done
+          echo "API did not become healthy after deploy." >&2
+          exit 1
+
+      - name: CloudFront serves the new frontend (retried — invalidation isn't instant)
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ vars.CLOUDFRONT_DOMAIN }}/")
+            [ "$status" = "200" ] && { echo "Frontend healthy (attempt $attempt)"; exit 0; }
+            echo "CloudFront returned $status on attempt $attempt, retrying in 15s..."
+            sleep 15
+          done
+          echo "Frontend did not become healthy after deploy." >&2
+          exit 1
+
+      - name: Record this commit as the new last-known-good (only reached if both checks above passed)
+        run: |
+          aws ssm put-parameter --name /rag-workshop/last-good-sha \
+            --value "${{ github.sha }}" --type String --overwrite
+
+  rollback:
+    name: Roll back to the last known-good commit
+    needs: [deploy, health-check]
+    if: failure() && needs.deploy.outputs.previous_sha != ''
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.deploy.outputs.previous_sha }}
+
+      - name: Assume the deploy role via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Rebuild the previous known-good frontend
+        run: npm run build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ vars.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ vars.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
+
+      - name: Redeploy previous known-good Lambda source + frontend
+        working-directory: backend/lambda
+        run: |
+          set -euo pipefail
+          declare -A FUNCTIONS=(
+            [index]="rag-workshop-ask"
+            [conversations]="rag-workshop-conversations"
+            [documents_upload]="rag-workshop-documents-upload"
+            [documents_manage]="rag-workshop-documents-manage"
+            [ingest_sync]="rag-workshop-ingest-sync"
+          )
+          for src in "${!FUNCTIONS[@]}"; do
+            fn="${FUNCTIONS[$src]}"
+            zip -q "/tmp/${fn}.zip" "${src}.py"
+            aws lambda update-function-code --function-name "$fn" \
+              --zip-file "fileb:///tmp/${fn}.zip" --region "$AWS_REGION" > /dev/null
+          done
+          aws s3 sync ../../frontend/out/ "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*" > /dev/null
+          echo "Rolled back to ${{ needs.deploy.outputs.previous_sha }}"
+
+      - name: Fail this run loudly (deploy is rolled back, but the triggering commit is still bad)
+        run: |
+          echo "::error::Deploy of ${{ github.sha }} failed health checks and was rolled back to ${{ needs.deploy.outputs.previous_sha }}. Fix the commit before merging again."
+          exit 1

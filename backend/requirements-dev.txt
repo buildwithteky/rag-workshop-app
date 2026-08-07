@@ -1,0 +1,5 @@
+# Only needed to run the test suite locally / in CI — Lambda itself only needs boto3,
+# which is already present in the Lambda Python runtime and doesn't need to be packaged.
+pytest==8.3.3
+moto[dynamodb,s3]==5.0.14
+boto3==1.35.0

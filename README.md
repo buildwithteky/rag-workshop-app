@@ -130,6 +130,50 @@ For the automated path, see [.github/workflows/deploy.yml](./.github/workflows/d
 pushing to `main` builds, tests, and deploys automatically via GitHub OIDC (no long-lived
 AWS keys stored in GitHub).
 
+## CI/CD
+
+Every push and PR runs [`.github/workflows/ci.yml`](./.github/workflows/ci.yml): frontend
+lint + typecheck + build, backend compile-check + `pytest` (moto-mocked AWS, no real
+account needed), and a security/quality pass (a guard script that fails the build if a
+real AWS account ID or access key ever gets hardcoded back into `infra/*.json`, plus
+`npm audit` / `pip-audit`).
+
+Pushing to `main` additionally runs [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml),
+which requires that same CI gate to pass on the exact commit before touching AWS, then:
+**build → deploy Lambdas + frontend → health-check the live API and CloudFront →
+roll back to the last known-good commit automatically if the health check fails.**
+
+AWS authentication uses **GitHub's OIDC provider and a federated IAM role — no
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` secret is ever stored in GitHub.** One-time
+setup:
+
+```bash
+GITHUB_ORG=your-org GITHUB_REPO=rag-workshop-app bash infra/setup-github-oidc.sh
+```
+
+This registers `token.actions.githubusercontent.com` as an OIDC provider, creates an IAM
+role whose trust policy only allows `sts:AssumeRoleWithWebIdentity` for this exact
+`repo:<org>/<repo>:ref:refs/heads/main` subject claim (see
+`infra/github-oidc-trust-policy.json`), and attaches a least-privilege deploy policy
+(`infra/github-actions-deploy-permissions-policy.json` — only `UpdateFunctionCode` on
+this app's 5 functions, S3 on the frontend bucket, CloudFront invalidation, and the one
+SSM parameter used as a rollback marker).
+
+Then set these in **Settings → Secrets and variables → Actions → Variables** on the repo
+(none of these are secrets — they're identifiers, safe as plain Variables):
+
+| Variable | Example |
+|---|---|
+| `AWS_DEPLOY_ROLE_ARN` | printed by `setup-github-oidc.sh` |
+| `AWS_REGION` | `us-east-1` |
+| `API_URL` | `https://<api-id>.execute-api.us-east-1.amazonaws.com` |
+| `NEXT_PUBLIC_API_URL` | same as `API_URL` |
+| `NEXT_PUBLIC_COGNITO_USER_POOL_ID` | from `resource-ids.json` |
+| `NEXT_PUBLIC_COGNITO_CLIENT_ID` | from `resource-ids.json` |
+| `FRONTEND_BUCKET` | `rag-workshop-frontend-<account-id>` |
+| `CLOUDFRONT_DISTRIBUTION_ID` | from `resource-ids.json` |
+| `CLOUDFRONT_DOMAIN` | `<distribution>.cloudfront.net` |
+
 ## Environment / configuration reference
 
 - Frontend: [`frontend/.env.example`](./frontend/.env.example)
