@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3ReadDocs",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::rag-workshop-docs-<ACCOUNT_ID>",
+        "arn:aws:s3:::rag-workshop-docs-<ACCOUNT_ID>/*"
+      ]
+    },
+    {
+      "Sid": "S3VectorsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:GetVectorBucket",
+        "s3vectors:GetIndex",
+        "s3vectors:PutVectors",
+        "s3vectors:GetVectors",
+        "s3vectors:QueryVectors",
+        "s3vectors:DeleteVectors",
+        "s3vectors:ListVectors"
+      ],
+      "Resource": [
+        "arn:aws:s3vectors:us-east-1:<ACCOUNT_ID>:bucket/rag-workshop-vectors-<ACCOUNT_ID>",
+        "arn:aws:s3vectors:us-east-1:<ACCOUNT_ID>:bucket/rag-workshop-vectors-<ACCOUNT_ID>/index/rag-workshop-index"
+      ]
+    },
+    {
+      "Sid": "BedrockEmbedInvoke",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env
+.env.local
+*.pem
+.DS_Store
+dist/
+build/
+__pycache__/
+*.zip
+.aws-sam/
+resource-ids.json
+frontend/out/
+frontend/.env*.local
+
+infra/rendered/

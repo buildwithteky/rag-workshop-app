@@ -1,0 +1,39 @@
+{
+  "CallerReference": "rag-workshop-frontend-2026",
+  "Comment": "RAG workshop frontend distribution",
+  "Enabled": true,
+  "DefaultRootObject": "index.html",
+  "Origins": {
+    "Quantity": 1,
+    "Items": [
+      {
+        "Id": "s3-rag-workshop-frontend",
+        "DomainName": "rag-workshop-frontend-<ACCOUNT_ID>.s3.us-east-1.amazonaws.com",
+        "OriginAccessControlId": "<CLOUDFRONT_OAC_ID>",
+        "S3OriginConfig": { "OriginAccessIdentity": "" }
+      }
+    ]
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "s3-rag-workshop-frontend",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": {
+      "Quantity": 2,
+      "Items": ["GET", "HEAD"]
+    },
+    "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+    "Compress": true
+  },
+  "CustomErrorResponses": {
+    "Quantity": 1,
+    "Items": [
+      {
+        "ErrorCode": 403,
+        "ResponsePagePath": "/index.html",
+        "ResponseCode": "200",
+        "ErrorCachingMinTTL": 10
+      }
+    ]
+  },
+  "PriceClass": "PriceClass_100"
+}

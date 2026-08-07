@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockKBRetrieveGenerate",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:RetrieveAndGenerate",
+        "bedrock:Retrieve"
+      ],
+      "Resource": "arn:aws:bedrock:us-east-1:<ACCOUNT_ID>:knowledge-base/<KNOWLEDGE_BASE_ID>"
+    },
+    {
+      "Sid": "BedrockGenerationModelInvoke",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
+    },
+    {
+      "Sid": "DynamoDbReadyDocCheck",
+      "Effect": "Allow",
+      "Action": "dynamodb:Query",
+      "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-documents"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "rag-workshop-kb",
+  "description": "Company policy RAG knowledge base for the workshop app",
+  "roleArn": "arn:aws:iam::<ACCOUNT_ID>:role/rag-workshop-kb-role",
+  "knowledgeBaseConfiguration": {
+    "type": "VECTOR",
+    "vectorKnowledgeBaseConfiguration": {
+      "embeddingModelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
+      "embeddingModelConfiguration": {
+        "bedrockEmbeddingModelConfiguration": {
+          "dimensions": 1024
+        }
+      }
+    }
+  },
+  "storageConfiguration": {
+    "type": "S3_VECTORS",
+    "s3VectorsConfiguration": {
+      "vectorBucketArn": "arn:aws:s3vectors:us-east-1:<ACCOUNT_ID>:bucket/rag-workshop-vectors-<ACCOUNT_ID>",
+      "indexArn": "arn:aws:s3vectors:us-east-1:<ACCOUNT_ID>:bucket/rag-workshop-vectors-<ACCOUNT_ID>/index/rag-workshop-index"
+    }
+  }
+}
