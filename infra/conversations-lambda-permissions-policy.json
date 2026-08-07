@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DynamoDbConversationsTable",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-conversations"
+    },
+    {
+      "Sid": "DynamoDbMessagesTable",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:Query",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-messages"
+    },
+    {
+      "Sid": "DynamoDbDocumentScopeValidation",
+      "Effect": "Allow",
+      "Action": "dynamodb:GetItem",
+      "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-documents"
+    }
+  ]
+}

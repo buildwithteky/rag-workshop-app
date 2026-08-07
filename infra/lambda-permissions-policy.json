@@ -21,6 +21,18 @@
       "Effect": "Allow",
       "Action": "dynamodb:Query",
       "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-documents"
+    },
+    {
+      "Sid": "DynamoDbConversationOwnershipAndScope",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+      "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-conversations"
+    },
+    {
+      "Sid": "DynamoDbMessagePersistence",
+      "Effect": "Allow",
+      "Action": "dynamodb:PutItem",
+      "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-messages"
     }
   ]
 }
