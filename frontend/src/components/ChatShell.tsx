@@ -27,6 +27,12 @@ export function ChatShell() {
   const [draftScope, setDraftScope] = useState<string[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
+  // Deliberately decoupled from activeConversationId: a draft chat being promoted to a
+  // real, persisted conversation on its first send (see handleConversationCreated) must
+  // NOT remount ChatInterface, or the in-flight question/answer it's mid-way through
+  // rendering gets thrown away. Only an explicit "New chat" or sidebar selection should
+  // force a fresh instance.
+  const [chatInstanceKey, setChatInstanceKey] = useState("draft");
 
   const refreshConversations = useCallback(async () => {
     const token = await getFreshToken();
@@ -52,7 +58,10 @@ export function ChatShell() {
       if (cancelled) return;
       setConversations(convos);
       setDocuments(docs);
-      if (convos.length > 0) setActiveConversationId(convos[0].conversationId);
+      if (convos.length > 0) {
+        setActiveConversationId(convos[0].conversationId);
+        setChatInstanceKey(convos[0].conversationId);
+      }
     })();
     return () => {
       cancelled = true;
@@ -81,15 +90,18 @@ export function ChatShell() {
   function handleNewChat() {
     setActiveConversationId(null);
     setDraftScope([]);
+    setChatInstanceKey(`draft-${Date.now()}`);
   }
 
   function handleSelect(conversationId: string) {
     setActiveConversationId(conversationId);
+    setChatInstanceKey(conversationId);
   }
 
   function handleConversationCreated(conversation: Conversation) {
     setConversations((prev) => [conversation, ...prev]);
     setActiveConversationId(conversation.conversationId);
+    // Note: chatInstanceKey deliberately NOT updated here — see its declaration above.
   }
 
   async function handleRename(conversationId: string, title: string) {
@@ -166,7 +178,7 @@ export function ChatShell() {
         </div>
 
         <ChatInterface
-          key={activeConversationId ?? "draft"}
+          key={chatInstanceKey}
           conversationId={activeConversationId}
           conversation={activeConversation}
           documents={documents}

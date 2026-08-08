@@ -51,6 +51,11 @@ export function ChatInterface({
   const [validationError, setValidationError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Set right before a draft chat's first send promotes it to a real conversationId (see
+  // submitQuestion below). The history-loading effect below checks this so that self-driven
+  // transition doesn't wipe the very message/answer still being rendered mid-flight by
+  // re-fetching a transcript the backend hasn't finished persisting yet.
+  const skipNextHistoryFetchRef = useRef(false);
 
   const readyDocs = documents.filter((d) => d.status === "READY");
   const noReadyDocs = readyDocs.length === 0;
@@ -64,6 +69,10 @@ export function ChatInterface({
   // switching to a draft (conversationId === null, e.g. after "New chat") clears it.
   useEffect(() => {
     let cancelled = false;
+    if (skipNextHistoryFetchRef.current) {
+      skipNextHistoryFetchRef.current = false;
+      return;
+    }
     (async () => {
       // Yield a microtask first so this setState always runs as a reaction to the effect
       // having fired, not as a synchronous side effect of the render that scheduled it.
@@ -130,6 +139,7 @@ export function ChatInterface({
       if (!activeId) {
         const created = await createConversation(token, { documentIds: draftScope });
         activeId = created.conversationId;
+        skipNextHistoryFetchRef.current = true;
         onConversationCreated(created);
       }
 
