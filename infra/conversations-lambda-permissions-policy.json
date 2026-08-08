@@ -18,7 +18,8 @@
       "Effect": "Allow",
       "Action": [
         "dynamodb:Query",
-        "dynamodb:DeleteItem"
+        "dynamodb:DeleteItem",
+        "dynamodb:BatchWriteItem"
       ],
       "Resource": "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rag-workshop-messages"
     },
