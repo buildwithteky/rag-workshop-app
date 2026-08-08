@@ -179,12 +179,12 @@ export function ChatInterface({
   const suggestions = readyDocs.slice(0, 4).map((d) => `What does ${d.fileName} say?`);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex justify-end border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900 sm:px-6">
         <DocumentScopePicker documents={documents} selectedDocumentIds={scope} onChange={onScopeChange} />
       </div>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6">
+      <main className="mx-auto flex w-full min-h-0 max-w-3xl flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6">
         {historyLoading ? (
           <div className="flex flex-1 items-center justify-center">
             <span className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" />
