@@ -55,6 +55,29 @@ def _get_user_id(event):
         return None
 
 
+TOOL_CALL_TRACE_RE = re.compile(r"^\s*Action:\s*\S+\([^)]*\)\s*$")
+
+
+def _clean_answer_text(raw_text):
+    """
+    Nova occasionally echoes its internal retrieval tool-call trace (e.g.
+    'Action: GlobalDataSource.search(...)') instead of, or before, the real answer.
+    Keep only the text after the last "Response:" marker when present; if the whole
+    output is just the bare trace with no marker, treat it as no answer at all so the
+    caller can retry rather than surface the internal trace to the user.
+    """
+    text = raw_text.strip()
+    if "Response:" in text:
+        return text.rsplit("Response:", 1)[-1].strip()
+    if TOOL_CALL_TRACE_RE.match(text):
+        return ""
+    return text
+
+
+def _is_bare_tool_call_trace(result):
+    return not _clean_answer_text(result.get("output", {}).get("text", ""))
+
+
 def _extract_filename(uri):
     if not uri:
         return "Unknown source"
@@ -227,23 +250,31 @@ def handler(event, context):
         )
         return _response(200, {"answer": message, "sources": [], "sessionId": "", "conversationId": conversation_id})
 
-    try:
-        result = bedrock_agent_runtime.retrieve_and_generate(
-            input={"text": question},
-            retrieveAndGenerateConfiguration={
-                "type": "KNOWLEDGE_BASE",
-                "knowledgeBaseConfiguration": {
-                    "knowledgeBaseId": KNOWLEDGE_BASE_ID,
-                    "modelArn": MODEL_ARN,
-                    "retrievalConfiguration": {
-                        "vectorSearchConfiguration": {
-                            "numberOfResults": NUMBER_OF_RESULTS,
-                            "filter": _build_retrieval_filter(user_id, document_ids),
-                        }
-                    },
+    retrieve_and_generate_kwargs = {
+        "input": {"text": question},
+        "retrieveAndGenerateConfiguration": {
+            "type": "KNOWLEDGE_BASE",
+            "knowledgeBaseConfiguration": {
+                "knowledgeBaseId": KNOWLEDGE_BASE_ID,
+                "modelArn": MODEL_ARN,
+                "retrievalConfiguration": {
+                    "vectorSearchConfiguration": {
+                        "numberOfResults": NUMBER_OF_RESULTS,
+                        "filter": _build_retrieval_filter(user_id, document_ids),
+                    }
                 },
             },
-        )
+        },
+    }
+
+    try:
+        result = bedrock_agent_runtime.retrieve_and_generate(**retrieve_and_generate_kwargs)
+        if _is_bare_tool_call_trace(result):
+            # Nova occasionally emits only its internal retrieval tool-call trace
+            # (e.g. "Action: GlobalDataSource.search(...)") with no real answer at all.
+            # Resampling once is usually enough to get an actual response.
+            logger.warning(json.dumps({"event": "bare_tool_call_trace", "request_id": request_id}))
+            result = bedrock_agent_runtime.retrieve_and_generate(**retrieve_and_generate_kwargs)
     except ClientError as exc:
         error_code = exc.response.get("Error", {}).get("Code", "Unknown")
         logger.error(
@@ -267,11 +298,7 @@ def handler(event, context):
         )
         return _response(500, {"error": "An unexpected error occurred. Please try again."})
 
-    answer_text = result.get("output", {}).get("text", "").strip()
-    # Nova occasionally echoes an internal tool-call trace before the real answer;
-    # if present, keep only the text after the last "Response:" marker.
-    if "Response:" in answer_text:
-        answer_text = answer_text.rsplit("Response:", 1)[-1].strip()
+    answer_text = _clean_answer_text(result.get("output", {}).get("text", ""))
     sources = _parse_citations(result.get("citations"))
     final_answer = answer_text or "I don't have enough information in your documents to answer that."
 
