@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description: "Ask questions about company policy and get document-grounded answers with citations.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
