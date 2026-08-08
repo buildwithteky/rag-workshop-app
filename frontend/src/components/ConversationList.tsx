@@ -125,7 +125,7 @@ export function ConversationList({
                     </button>
                   </div>
                 ) : (
-                  <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  <div className="flex shrink-0 items-center gap-0.5 md:hidden md:group-hover:flex">
                     <button
                       type="button"
                       aria-label="Rename conversation"
