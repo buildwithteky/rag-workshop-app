@@ -22,7 +22,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               📚
             </span>
             <h1 className="hidden text-sm font-semibold text-zinc-900 dark:text-zinc-100 sm:inline">
-              Acme Policy Assistant
+              RAG Chatbot
             </h1>
           </div>
           <nav className="flex shrink-0 items-center gap-1">

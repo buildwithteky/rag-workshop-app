@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Acme Policy Assistant",
+  title: "RAG Chatbot",
   description: "Ask questions about company policy and get document-grounded answers with citations.",
 };
 

@@ -36,7 +36,6 @@ export function ConversationList({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   function startEditing(conversation: Conversation) {
     setEditingId(conversation.conversationId);
@@ -62,7 +61,6 @@ export function ConversationList({
       {conversations.map((conversation) => {
         const isActive = conversation.conversationId === activeConversationId;
         const isEditing = editingId === conversation.conversationId;
-        const isConfirmingDelete = confirmDeleteId === conversation.conversationId;
 
         return (
           <li key={conversation.conversationId}>
@@ -104,46 +102,28 @@ export function ConversationList({
                   </p>
                 </button>
 
-                {isConfirmingDelete ? (
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => {
+                <div className="flex shrink-0 items-center gap-0.5 md:hidden md:group-hover:flex">
+                  <button
+                    type="button"
+                    aria-label="Rename conversation"
+                    onClick={() => startEditing(conversation)}
+                    className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Delete conversation"
+                    onClick={() => {
+                      if (window.confirm(`Delete "${conversation.title || "New chat"}"? This can't be undone.`)) {
                         onDelete(conversation.conversationId);
-                        setConfirmDeleteId(null);
-                      }}
-                      className="rounded px-1.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="rounded px-1.5 py-1 text-xs text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex shrink-0 items-center gap-0.5 md:hidden md:group-hover:flex">
-                    <button
-                      type="button"
-                      aria-label="Rename conversation"
-                      onClick={() => startEditing(conversation)}
-                      className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Delete conversation"
-                      onClick={() => setConfirmDeleteId(conversation.conversationId)}
-                      className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                    >
-                      🗑
-                    </button>
-                  </div>
-                )}
+                      }
+                    }}
+                    className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                  >
+                    🗑
+                  </button>
+                </div>
               </div>
             )}
           </li>
